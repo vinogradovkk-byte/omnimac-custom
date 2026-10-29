@@ -59,7 +59,7 @@ final class AsanaUploadTests: XCTestCase {
 }
 
 final class AsanaCommentFilesTests: XCTestCase {
-    private func story(_ gid: String, subtype: String, type: String = "system", text: String? = nil, author: String = "Кирилл", at: String, files: [[String: Any]] = []) -> [String: Any] {
+    private func story(_ gid: String, subtype: String, type: String = "system", text: String? = nil, author: String = "Alex", at: String, files: [[String: Any]] = []) -> [String: Any] {
         var row: [String: Any] = ["gid": gid, "type": type, "resource_subtype": subtype, "created_by": ["name": author], "created_at": at, "attachments": files]
         if let text { row["text"] = text }
         return row

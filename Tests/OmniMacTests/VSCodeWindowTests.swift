@@ -5,20 +5,20 @@ final class VSCodeWindowNamingTests: XCTestCase {
     func testParsesRootFromEditorTitle() {
         XCTAssertEqual(
             VSCodeWindowNaming.parse(
-                title: "AppDelegate.swift — ominc — Visual Studio Code",
+                title: "AppDelegate.swift — project — Visual Studio Code",
                 documentURL: URL(fileURLWithPath: "/Users/dev/project/AppDelegate.swift")
             ),
-            VSCodeWindowName(root: "ominc", editor: "AppDelegate.swift", fallback: nil)
+            VSCodeWindowName(root: "project", editor: "AppDelegate.swift", fallback: nil)
         )
     }
 
     func testParsesCurrentVSCodeTitleWithoutApplicationSuffix() {
         XCTAssertEqual(
             VSCodeWindowNaming.parse(
-                title: "Расширение: Codex — ominc",
+                title: "Расширение: Codex — project",
                 documentURL: nil
             ),
-            VSCodeWindowName(root: "ominc", editor: "Расширение: Codex", fallback: nil)
+            VSCodeWindowName(root: "project", editor: "Расширение: Codex", fallback: nil)
         )
     }
 
@@ -34,8 +34,8 @@ final class VSCodeWindowNamingTests: XCTestCase {
 
     func testParsesRootOnlyTitle() {
         XCTAssertEqual(
-            VSCodeWindowNaming.parse(title: "ominc — Visual Studio Code", documentURL: nil).root,
-            "ominc"
+            VSCodeWindowNaming.parse(title: "project — Visual Studio Code", documentURL: nil).root,
+            "project"
         )
     }
 
@@ -64,13 +64,13 @@ final class VSCodeWindowNamingTests: XCTestCase {
 
     func testDuplicateRootsAppendEditorNames() {
         let names = [
-            VSCodeWindowName(root: "ominc", editor: "App.swift", fallback: nil),
-            VSCodeWindowName(root: "ominc", editor: "Tests.swift", fallback: nil),
+            VSCodeWindowName(root: "project", editor: "App.swift", fallback: nil),
+            VSCodeWindowName(root: "project", editor: "Tests.swift", fallback: nil),
         ]
 
         XCTAssertEqual(
             VSCodeWindowNaming.displayNames(for: names, noFolder: "No folder"),
-            ["ominc — App.swift", "ominc — Tests.swift"]
+            ["project — App.swift", "project — Tests.swift"]
         )
     }
 
@@ -103,8 +103,8 @@ final class VSCodeWindowProviderTests: XCTestCase {
     func testCrossSpaceWindowIsRecoveredFromWindowMenu() {
         XCTAssertEqual(
             VSCodeWindowDiscovery.fallbackMenuTitles(
-                accessibleTitles: ["File.swift — ominc"],
-                windowMenuTitles: ["Приветствие — test", "File.swift — ominc"]
+                accessibleTitles: ["File.swift — project"],
+                windowMenuTitles: ["Приветствие — test", "File.swift — project"]
             ),
             ["Приветствие — test"]
         )
