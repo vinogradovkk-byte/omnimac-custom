@@ -89,7 +89,16 @@ final class AsanaStore: ObservableObject {
         if hiddenStatuses.contains(status) { hiddenStatuses.remove(status) } else { hiddenStatuses.insert(status) }
     }
 
+    /// Datos de muestra para las capturas de la documentación: sin red ni llavero.
+    private var isSample = false
+    func useSample(tasks: [AsanaTask], order: [String], doneToday: Int, expanded: String?, detail: AsanaTaskDetail?) {
+        isSample = true; self.tasks = tasks; statusOrder = order; self.doneToday = doneToday
+        userName = "Alex Demo"; updatedAt = Date(); phase = .loaded
+        if let expanded, let detail { self.expanded = [expanded]; details[expanded] = .loaded(detail) }
+    }
+
     func open() {
+        if isSample { return }
         if token != nil { refresh(); return }
         guard Self.mayHaveToken, !loadingToken else { return }
         loadingToken = true
@@ -105,6 +114,7 @@ final class AsanaStore: ObservableObject {
     }
 
     func refresh() {
+        if isSample { return }
         guard let token else { phase = .needsSetup; return }
         loadTask?.cancel()
         if tasks.isEmpty { phase = .loading }

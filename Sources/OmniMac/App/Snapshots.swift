@@ -83,9 +83,11 @@ enum Snapshots {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
                     save(hosting, to: dir.appendingPathComponent("notch-headphones.png"))
                     window.orderOut(nil)
-                    renderMenu(into: dir, source: menuSource) {
-                        cleanUp()
-                        NSApp.terminate(nil)
+                    renderWorkTabs(into: dir) {
+                        renderMenu(into: dir, source: menuSource) {
+                            cleanUp()
+                            NSApp.terminate(nil)
+                        }
                     }
                 }
                 return
@@ -129,7 +131,7 @@ enum Snapshots {
 
     // MARK: - Ayudas
 
-    private static func offscreenWindow(size: CGSize, content: NSView) -> NSWindow {
+    static func offscreenWindow(size: CGSize, content: NSView) -> NSWindow {
         let window = NSWindow(contentRect: CGRect(origin: .zero, size: size),
                               styleMask: .borderless, backing: .buffered, defer: false)
         window.isOpaque = false
@@ -141,7 +143,7 @@ enum Snapshots {
         return window
     }
 
-    private static func save(_ view: NSView, to url: URL) {
+    static func save(_ view: NSView, to url: URL) {
         view.layoutSubtreeIfNeeded()
         view.displayIfNeeded()
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }

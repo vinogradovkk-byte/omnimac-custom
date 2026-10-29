@@ -64,7 +64,15 @@ final class GitLabStore: ObservableObject {
     var isConnected: Bool { credentials != nil || Self.mayHaveToken }
 
     /// Вызывается при открытии вкладки: токен читается с фонового потока, потом идёт обновление.
+    /// Datos de muestra para las capturas de la documentación: sin red ni llavero.
+    private var isSample = false
+    func useSample(mine: [GitLabMergeRequest], review: [GitLabMergeRequest], section: Section) {
+        isSample = true; requests = mine; reviews = review; self.section = section
+        username = "alex.demo"; updatedAt = Date(); phase = .loaded
+    }
+
     func open() {
+        if isSample { return }
         if credentials != nil { refresh(); return }
         guard Self.mayHaveToken, !loadingToken else { return }
         loadingToken = true
@@ -87,6 +95,7 @@ final class GitLabStore: ObservableObject {
 
     /// Вызывается при открытии вкладки: опроса по таймеру нет.
     func refresh() {
+        if isSample { return }
         guard let credentials else { phase = .needsSetup; return }
         loadTask?.cancel()
         if requests.isEmpty { phase = .loading }

@@ -31,10 +31,13 @@ final class AIChatCoordinator: ObservableObject {
         }
     }
 
-    func start() { providers.values.forEach { $0.refresh() } }
+    /// Con datos de muestra (capturas de la documentación) no se arranca ningún cliente real.
+    var isSample = false
+
+    func start() { if !isSample { providers.values.forEach { $0.refresh() } } }
     func stop() { providers.values.forEach { $0.shutdown() }; clearAllScreenshots() }
     func signIn() { providers[selectedProvider]?.signIn() }
-    func refresh() { providers[selectedProvider]?.refresh() }
+    func refresh() { if !isSample { providers[selectedProvider]?.refresh() } }
 
     func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -73,7 +76,7 @@ final class AIChatCoordinator: ObservableObject {
         return currentModel?.defaultEffort.flatMap { steps.contains($0) ? $0 : nil } ?? steps.first
     }
 
-    func refreshUsage() { providers[selectedProvider]?.refreshUsage() }
+    func refreshUsage() { if !isSample { providers[selectedProvider]?.refreshUsage() } }
 
     func newChat() { activeConversation[selectedProvider] = nil; messages[selectedProvider] = [] }
 
@@ -117,7 +120,7 @@ final class AIChatCoordinator: ObservableObject {
         attachments = []; sentImages = []
     }
 
-    private func syncProvider() { providers[selectedProvider]?.refresh() }
+    private func syncProvider() { if !isSample { providers[selectedProvider]?.refresh() } }
     private func receive(_ event: AIProviderEvent, from kind: AIProviderKind) {
         switch event {
         case .state(let value): states[kind] = value

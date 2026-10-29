@@ -53,6 +53,9 @@ final class NotesStore: ObservableObject {
         selectedID = visibleNotes.first?.id
     }
 
+    /// Notas de muestra para las capturas: no se guardan en disco.
+    func useSample(_ sample: [OmniNote]) { notes = sample; selectedID = visibleNotes.first?.id }
+
     // MARK: - Выборка
 
     /// Заметки текущей папки: закреплённые сверху, дальше по дате изменения; поиск ищет по всему тексту.
