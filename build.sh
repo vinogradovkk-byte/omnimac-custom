@@ -17,11 +17,21 @@ echo "🔨 Compilando OmniMac (release)…"
 # publicar; el día a día va por scripts/dev/quickbuild.sh (arm64), que no se toca.
 ARM=.build-arm64
 X86=.build-x86_64
+if [[ "$1" == "native" || "$NATIVE" == "1" ]]; then
+  # Solo la arquitectura de este Mac: la mitad de tiempo que el universal. Es lo que
+  # hay que usar para instalar la app en tu propio equipo (./build.sh native run).
+  [[ "$1" == "native" ]] && shift
+  swift build -c release --scratch-path "$ARM"
+  BIN="$ARM/release"
+  mkdir -p .build/universal
+  cp "$ARM/release/OmniMac" .build/universal/OmniMac
+else
 swift build -c release --scratch-path "$ARM"
 swift build -c release --triple x86_64-apple-macosx --scratch-path "$X86"
 BIN="$ARM/release"
 mkdir -p .build/universal
 lipo -create "$ARM/release/OmniMac" "$X86/release/OmniMac" -output .build/universal/OmniMac
+fi
 
 APP="dist/OmniMac.app"
 rm -rf "$APP"
