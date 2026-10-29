@@ -102,4 +102,36 @@ final class NotchGeometryTests: XCTestCase {
                               safeAreaTop: 0, auxiliaryWidths: nil, menuBarHeight: 24)
         XCTAssertEqual(g.collapsedFrame.midX, 1512 + 960, accuracy: 0.001)
     }
+
+    func testVSCodeHeightKeepsBaselineForAtMostTwoWindows() {
+        XCTAssertEqual(NotchGeometry.vscodeExpandedHeight(windowCount: 0, screenHeight: 982), 196)
+        XCTAssertEqual(NotchGeometry.vscodeExpandedHeight(windowCount: 2, screenHeight: 982), 196)
+    }
+
+    func testVSCodeHeightAddsFortyPointsPerWindowBeyondTwo() {
+        XCTAssertEqual(NotchGeometry.vscodeExpandedHeight(windowCount: 3, screenHeight: 982), 236)
+        XCTAssertEqual(NotchGeometry.vscodeExpandedHeight(windowCount: 5, screenHeight: 982), 316)
+    }
+
+    func testVSCodeHeightIsCappedAtSeventyPercentOfScreen() {
+        XCTAssertEqual(NotchGeometry.vscodeExpandedHeight(windowCount: 100, screenHeight: 800), 560)
+    }
+
+    func testDynamicExpandedFramesStayAnchoredToScreenTop() {
+        let g = macBookPro14()
+        let frames = g.expandedFrames(height: 316)
+        XCTAssertEqual(frames.panel.maxY, g.screenFrame.maxY, accuracy: 0.001)
+        XCTAssertEqual(frames.body.maxY, g.screenFrame.maxY, accuracy: 0.001)
+        XCTAssertEqual(frames.body.height, 316, accuracy: 0.001)
+    }
+
+    func testAIExpandedSizeUsesReadableDefaultOnLargeScreen() {
+        XCTAssertEqual(macBookPro14().aiExpandedSize(), CGSize(width: 760, height: 520))
+    }
+
+    func testAIExpandedSizeIsCappedOnSmallScreen() {
+        let g = NotchGeometry(frame: CGRect(x: 0, y: 0, width: 700, height: 600),
+                              safeAreaTop: 0, auxiliaryWidths: nil, menuBarHeight: 24)
+        XCTAssertEqual(g.aiExpandedSize(), CGSize(width: 660, height: 420))
+    }
 }

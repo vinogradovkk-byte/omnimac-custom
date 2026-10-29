@@ -91,9 +91,14 @@ final class MiscTests: XCTestCase {
         XCTAssertEqual(Brand.sponsorsURL.host, "github.com")
     }
 
-    func testNotchTabsPerformanceGoesRight() {
+    func testNotchTabsVSCodeUsesPermanentSecondRow() {
+        XCTAssertFalse(NotchTab.leftTabs.contains(.vscode))
         XCTAssertFalse(NotchTab.leftTabs.contains(.performance))
-        XCTAssertEqual(Set(NotchTab.leftTabs).union([.performance]), Set(NotchTab.allCases))
+        XCTAssertEqual(NotchTab.secondRowTabs, [.vscode, .ai, .gitlab, .asana, .notes])
+        XCTAssertEqual(
+            Set(NotchTab.leftTabs).union(NotchTab.secondRowTabs).union([.performance]),
+            Set(NotchTab.allCases)
+        )
     }
 }
 

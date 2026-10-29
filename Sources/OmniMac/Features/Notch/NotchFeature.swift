@@ -265,6 +265,11 @@ enum NotchTab: String, CaseIterable {
     case calendar
     case sound
     case timer
+    case vscode
+    case ai
+    case gitlab
+    case asana
+    case notes
     case performance
 
     var title: String {
@@ -274,6 +279,11 @@ enum NotchTab: String, CaseIterable {
         case .calendar: L("Calendario", "Calendar")
         case .sound: L("Sonido y volumen por app", "Sound and per-app volume")
         case .timer: L("Temporizador", "Timer")
+        case .vscode: "Visual Studio Code"
+        case .ai: L("Быстрый AI", "Quick AI")
+        case .gitlab: "GitLab"
+        case .asana: "Asana"
+        case .notes: L("Заметки", "Notes")
         case .performance: L("Rendimiento", "Performance")
         }
     }
@@ -285,6 +295,11 @@ enum NotchTab: String, CaseIterable {
         case .calendar: "calendar"
         case .sound: "speaker.wave.2.fill"
         case .timer: "timer"
+        case .vscode: "chevron.left.forwardslash.chevron.right"
+        case .ai: "sparkles"
+        case .gitlab: "arrow.triangle.merge"
+        case .asana: "checklist"
+        case .notes: "note.text"
         case .performance: "gauge.with.dots.needle.33percent"
         }
     }
@@ -296,6 +311,11 @@ enum NotchTab: String, CaseIterable {
         case .calendar: L("Los eventos de hoy (pide permiso de Calendario).", "Today's events (asks for Calendar permission).")
         case .sound: L("Salida de audio y volumen distinto para cada app.", "Audio output and a different volume for every app.")
         case .timer: L("Cuenta atrás y Pomodoro; el tiempo restante se ve junto al icono de la barra de menús.", "Countdown and Pomodoro; the time left shows next to the menu-bar icon.")
+        case .vscode: L("Ventanas abiertas de VS Code por carpeta raíz.", "Open VS Code windows by root folder.")
+        case .ai: L("Быстрые вопросы Codex и Claude Code.", "Quick Codex and Claude Code questions.")
+        case .notes: L("Свои заметки: список, поиск, закрепление и корзина на 30 дней.", "Your own notes: list, search, pinning and a 30-day trash.")
+        case .asana: L("Мои задачи Asana по статусам, с описанием, подзадачами и комментариями (только чтение).", "My Asana tasks by status, with description, subtasks and comments (read-only).")
+        case .gitlab: L("Мои merge request: открытые, смерженные и закрытые за 3 дня (только чтение).", "My merge requests: open, merged and closed in the last 3 days (read-only).")
         case .performance: L("CPU, memoria y red del último minuto.", "CPU, memory and network for the last minute.")
         }
     }
@@ -303,6 +323,8 @@ enum NotchTab: String, CaseIterable {
     /// Las de la izquierda de la barra; Rendimiento va a la derecha porque el quinto
     /// botón a la izquierda quedaba bajo el notch físico.
     static let leftTabs: [NotchTab] = [.media, .tray, .calendar, .sound, .timer]
+    /// Fila fija debajo de la cabecera: queda lejos de la cámara y no se reordena.
+    static let secondRowTabs: [NotchTab] = [.vscode, .ai, .gitlab, .asana, .notes]
 }
 
 /// Dónde caería un archivo arrastrado: bandeja o AirDrop.
@@ -362,7 +384,7 @@ final class NotchModel: ObservableObject {
 
     let hasNotch: Bool
     let notchSize: CGSize
-    let expandedSize: CGSize
+    @Published var expandedSize: CGSize
 
     static let peekExtraHeight: CGFloat = 30
     /// Espacio mínimo libre a cada lado del notch físico dentro del panel expandido.
@@ -467,6 +489,13 @@ final class NotchWindowController {
     private let battery = BatteryMonitor()
     private let calendar = CalendarBridge()
     private let stats = SystemStats()
+    private let vscode = VSCodeWindowMonitor()
+    private let ai = AIChatCoordinator()
+    private let gitlab = GitLabStore()
+    private let asana = AsanaStore()
+    private let notes = NotesStore()
+    private let mail = MailLauncher()
+    private let vpn = VPNMonitor()
     private let sound: SoundFeature
 
     /// Plegado: exactamente el notch físico (ni un píxel más: durante el cambio de
@@ -477,9 +506,9 @@ final class NotchWindowController {
     /// Zona en la que el ratón "cuenta" para abrir: algo más ancha que el notch.
     private let hoverZone: CGRect
     private let screenFrame: CGRect
-    private let expandedFrame: CGRect
+    private var expandedFrame: CGRect
     /// Rectángulo del negro expandido en pantalla (sin margen de sombra).
-    private let bodyFrame: CGRect
+    private var bodyFrame: CGRect
     private let shadowMargin: CGFloat
     private var collapseWork: DispatchWorkItem?
     private var expandWork: DispatchWorkItem?
@@ -508,6 +537,7 @@ final class NotchWindowController {
     }
     var chargerPeekEnabled = true
     private var batteryObserver: AnyCancellable?
+    private var layoutObservers = Set<AnyCancellable>()
     /// `nil` hasta la primera lectura: arrancar con el cargador puesto no es enchufarlo.
     private var wasPluggedIn: Bool?
     private var chargerWork: DispatchWorkItem?
@@ -515,6 +545,25 @@ final class NotchWindowController {
     private var deviceWork: DispatchWorkItem?
     /// Tras un cambio de escritorio, nada se abre solo hasta que el ratón se mueva de verdad.
     private var expandBlockedUntilMouseMoves = false
+    /// Al cambiar de pestaña el cuerpo puede encogerse y dejar el ratón fuera (el icono pulsado estaba en la parte
+    /// ancha de la pestaña AI): hasta que el ratón vuelva a entrar no se pliega solo.
+    private var awaitingReentry = false
+
+    /// Menús y popovers propios (modelo, historial, Usage) viven en ventanas aparte, fuera del cuerpo del notch.
+    private func ownPopupIsOpen() -> Bool {
+        NSApp.windows.contains { window in
+            guard window !== panel, window.isVisible else { return false }
+            if window is NSSavePanel { return true }   // диалог «Прикрепить файл»
+            let name = String(describing: type(of: window))
+            return name.contains("Popover") || name.contains("Menu")
+        }
+    }
+
+    /// ¿Hay que plegar porque el ratón se fue de verdad del notch?
+    private func shouldCollapseForMouseOutside(slack: CGFloat) -> Bool {
+        if Self.reaches(bodyFrame.insetBy(dx: -slack, dy: -slack), NSEvent.mouseLocation) { awaitingReentry = false; return false }
+        return !awaitingReentry && !ownPopupIsOpen()
+    }
     /// Icono sobre el que se pulsó y dónde, para poder arrastrarlo de sitio.
     private var dragCandidate: (tab: NotchTab, startX: CGFloat)?
     /// Mientras hay un menú abierto no hace falta seguir el ratón.
@@ -563,7 +612,6 @@ final class NotchWindowController {
         shadowMargin = geometry.shadowMargin
         expandedFrame = geometry.expandedFrame
         bodyFrame = geometry.bodyFrame
-        let expandedSize = geometry.expandedSize
 
         panel = NotchPanel(contentRect: collapsedFrame,
                            styleMask: [.borderless, .nonactivatingPanel],
@@ -583,15 +631,34 @@ final class NotchWindowController {
         // `isFloatingPanel`, que reinicia el nivel a "flotante" (3).
         panel.level = .popUpMenu
 
+        vscode.start()
         let hosting = FirstMouseHostingView(rootView: NotchView(model: model,
                                                                 media: media,
                                                                 battery: battery,
                                                                 keepAwake: keepAwake,
                                                                 calendar: calendar,
                                                                 sound: sound,
-                                                                stats: stats))
+                                                                stats: stats,
+                                                                vscode: vscode,
+                                                                ai: ai,
+                                                                gitlab: gitlab,
+                                                                asana: asana,
+                                                                notes: notes,
+                                                                mail: mail,
+                                                                vpn: vpn))
         panel.contentView = hosting
         self.hosting = hosting
+        Publishers.CombineLatest(model.$tab, vscode.$windows)
+            .map { tab, windows in
+                tab == .ai || tab == .gitlab || tab == .asana || tab == .notes ? geometry.aiExpandedSize() :
+                CGSize(width: geometry.expandedSize.width, height: tab == .vscode ? NotchGeometry.vscodeExpandedHeight(
+                        windowCount: windows.count,
+                        screenHeight: geometry.screenFrame.height
+                    ) : NotchGeometry.expandedHeight)
+            }
+            .removeDuplicates()
+            .sink { [weak self] size in self?.applyExpandedSize(size) }
+            .store(in: &layoutObservers)
         panel.setFrame(collapsedFrame, display: true)
         panel.orderFrontRegardless()
         AirDropPresenter.shared.sourceWindow = panel
@@ -634,10 +701,31 @@ final class NotchWindowController {
         updateWatch()
     }
 
+    private func applyExpandedHeight(_ height: CGFloat) {
+        applyExpandedSize(CGSize(width: geometry.expandedSize.width, height: height))
+    }
+
+    private func applyExpandedSize(_ size: CGSize) {
+        let frames = geometry.expandedFrames(size: size)
+        expandedFrame = frames.panel
+        bodyFrame = frames.body
+        model.expandedSize = size
+
+        guard model.expanded, model.deviceCard == nil else { return }
+        awaitingReentry = !Self.reaches(frames.body, NSEvent.mouseLocation)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(frames.panel, display: true)
+        }
+    }
+
     func close() {
         Toast.notchPresenter = nil
         media.stopPolling()
         media.stopWatching()
+        vscode.stop()
+        notes.saveNow()
         removeClickMonitor()
         removeForwardingTap()
         stopWatchdog()
@@ -721,7 +809,7 @@ final class NotchWindowController {
             updateHover(screenPoint: mouse)
             if model.deviceCard != nil { return }   // la tarjeta se cierra sola
             // Fuera del negro (6 px de margen) → se pliega casi al instante.
-            if Self.reaches(bodyFrame.insetBy(dx: -6, dy: -6), mouse) {
+            if !shouldCollapseForMouseOutside(slack: 6) {
                 collapseWork?.cancel()
                 collapseWork = nil
             } else if collapseWork == nil {
@@ -781,7 +869,13 @@ final class NotchWindowController {
             scheduleExpand()
         } else if model.expanded, collapseWork == nil, model.deviceCard == nil {
             // margen para mover el ratón dentro del panel sin que se cierre
-            let work = DispatchWorkItem { [weak self] in self?.collapseNow() }
+            // Al cambiar de pestaña (p. ej. a AI, que es más grande) el panel se redimensiona y
+            // SwiftUI avisa de una salida falsa: solo se pliega si el ratón está de verdad fuera.
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.collapseWork = nil
+                if self.shouldCollapseForMouseOutside(slack: 6) { self.collapseNow() }
+            }
             collapseWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
         }
@@ -862,6 +956,7 @@ final class NotchWindowController {
     }
 
     private func collapseNow() {
+        awaitingReentry = false
         collapseWork?.cancel()
         collapseWork = nil
         guard model.expanded else { return }
@@ -1117,7 +1212,26 @@ final class NotchWindowController {
     }
 
     /// Un clic fuera del panel lo pliega al instante.
+    private var popupClickMonitor: Any?
+
+    /// Un clic dentro de un popover propio que cuelga fuera del cuerpo (lista de modelos larga) lo cierra: al
+    /// desaparecer, el ratón queda fuera del notch y no debe plegarlo hasta que vuelva a entrar.
+    private func installPopupClickMonitor() {
+        guard popupClickMonitor == nil else { return }
+        popupClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] event in
+            guard let self, self.model.expanded else { return event }
+            if !Self.reaches(self.bodyFrame, NSEvent.mouseLocation) { self.awaitingReentry = true }
+            return event
+        }
+    }
+
+    private func removePopupClickMonitor() {
+        if let popupClickMonitor { NSEvent.removeMonitor(popupClickMonitor) }
+        popupClickMonitor = nil
+    }
+
     private func installClickMonitor() {
+        installPopupClickMonitor()
         guard clickMonitor == nil else { return }
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self, self.model.expanded else { return }
@@ -1128,6 +1242,7 @@ final class NotchWindowController {
     }
 
     private func removeClickMonitor() {
+        removePopupClickMonitor()
         if let clickMonitor {
             NSEvent.removeMonitor(clickMonitor)
         }
@@ -1293,7 +1408,7 @@ final class NotchWindowController {
         let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self, self.model.expanded else { return }
             if self.model.deviceCard != nil { return }   // la tarjeta se cierra sola
-            if !Self.reaches(self.bodyFrame.insetBy(dx: -16, dy: -16), NSEvent.mouseLocation) {
+            if self.shouldCollapseForMouseOutside(slack: 16) {
                 self.collapseNow()
             }
         }

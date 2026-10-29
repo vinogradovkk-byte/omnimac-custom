@@ -57,8 +57,16 @@ struct NotchView: View {
     @ObservedObject var calendar: CalendarBridge
     @ObservedObject var sound: SoundFeature
     @ObservedObject var stats: SystemStats
+    @ObservedObject var vscode: VSCodeWindowMonitor
+    @ObservedObject var ai: AIChatCoordinator
+    @ObservedObject var gitlab: GitLabStore
+    @ObservedObject var asana: AsanaStore
+    @ObservedObject var notes: NotesStore
+    @ObservedObject var mail: MailLauncher
+    @ObservedObject var vpn: VPNMonitor
     /// Marco de la zona AirDrop en coordenadas del notch (para decidir dónde cae la suelta).
     @State private var airDropFrame: CGRect = .zero
+    @State private var showVPN = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -153,6 +161,17 @@ struct NotchView: View {
         .coordinateSpace(name: "notch")
         .onDrop(of: [.fileURL], delegate: NotchDropDelegate(model: model, airDropFrame: { airDropFrame }))
         .onPreferenceChange(AirDropFrameKey.self) { airDropFrame = $0 }
+        // Опрос только пока notch раскрыт: в свёрнутом виде ничего не просыпается.
+        .task(id: model.expanded) {
+            guard model.expanded else { return }
+            var tick = 0
+            while !Task.isCancelled {
+                vpn.refresh()
+                if tick % 10 == 0 { mail.refresh() }
+                tick += 1
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
     }
 
 
@@ -172,6 +191,9 @@ struct NotchView: View {
     /// Una pestaña se ve si está activada en Ajustes y, en el caso de Sonido, si el
     /// módulo Sonido también lo está.
     private func isTabVisible(_ tab: NotchTab) -> Bool {
+        if tab == .vscode {
+            return VSCodeWindowProvider.shouldShowNotchTab(windowCount: vscode.windows.count)
+        }
         guard model.enabledTabs.contains(tab) else { return false }
         if tab == .sound { return sound.isEnabled }
         return true
@@ -180,6 +202,31 @@ struct NotchView: View {
     // MARK: - Barra de control (debajo de la barra de menús → clicable)
 
     private var controlBar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            primaryControlBar
+
+            HStack(spacing: 6) {
+                ForEach(NotchTab.secondRowTabs, id: \.self) { tab in
+                    tabButton(tab, symbol: tab.symbol, help: tab.title, draggable: false)
+                }
+                Spacer(minLength: 0)
+                // Не вкладки, а быстрые запуски: почта и статус VPN.
+                launcherButton(symbol: "envelope", badge: mail.unread, tint: nil, help: mail.helpText) { mail.open() }
+                if vpn.status != .unavailable {
+                    launcherButton(symbol: vpn.status == .connected ? "lock.shield.fill" : "lock.shield", badge: 0, tint: vpnTint, help: vpn.helpText) { showVPN.toggle() }
+                        .popover(isPresented: $showVPN, arrowEdge: .bottom) { VPNPanel(vpn: vpn) }
+                }
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 30)
+        }
+        // Dónde ha quedado cada icono reordenable de la primera fila.
+        .onPreferenceChange(TabFramesKey.self) { frames in
+            model.tabFrames = frames
+        }
+    }
+
+    private var primaryControlBar: some View {
         HStack(spacing: 6) {
             // Solo las pestañas activadas en Ajustes (y Sonido solo si su módulo está activo).
             ForEach(model.tabOrder.filter { isTabVisible($0) }, id: \.self) { tab in
@@ -228,23 +275,22 @@ struct NotchView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 34)
-        // Dónde ha quedado cada icono, para que el controlador pueda arrastrarlos.
-        .onPreferenceChange(TabFramesKey.self) { frames in
-            model.tabFrames = frames
-        }
     }
 
     /// Ancho de un icono más su separación: lo que hay que recorrer para adelantar a
     /// otro mientras se arrastra.
     private static let tabStep: CGFloat = 38
 
-    private func tabButton(_ tab: NotchTab, symbol: String, help: String) -> some View {
-        let isDragging = model.draggingTab == tab
+    private func tabButton(_ tab: NotchTab, symbol: String, help: String,
+                           draggable: Bool = true) -> some View {
+        let isDragging = draggable && model.draggingTab == tab
         return Button {
             withAnimation(.easeOut(duration: 0.15)) { model.tab = tab }
         } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
+            Group {
+                if tab == .gitlab { GitLabLogoView().frame(width: 14, height: 14) }
+                else { Image(systemName: symbol).font(.system(size: 13, weight: .semibold)) }
+            }
                 .foregroundStyle(model.tab == tab ? .white : .white.opacity(0.4))
                 .frame(width: 32, height: 26)
                 .background(
@@ -254,8 +300,10 @@ struct NotchView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(L("\(help) · ⌘ y arrastra para cambiarlo de sitio",
-                "\(help) · ⌘-drag to move it"))
+        .help(draggable
+              ? L("\(help) · ⌘ y arrastra para cambiarlo de sitio",
+                  "\(help) · ⌘-drag to move it")
+              : help)
         // El arrastre lo lleva el controlador (ver `NotchWindowController`), porque
         // los eventos de esta franja llegan por un tap y SwiftUI no puede seguir un
         // arrastre con ellos. Aquí solo se publica dónde está cada icono y se pinta
@@ -266,9 +314,41 @@ struct NotchView: View {
         .animation(.easeOut(duration: 0.12), value: isDragging)
         .background(
             GeometryReader { geometry in
-                Color.clear.preference(key: TabFramesKey.self, value: [tab: geometry.frame(in: .global)])
+                Color.clear.preference(
+                    key: TabFramesKey.self,
+                    value: draggable ? [tab: geometry.frame(in: .global)] : [:]
+                )
             }
         )
+    }
+
+    private var vpnTint: Color? {
+        switch vpn.status {
+        case .connected: return .green
+        case .connecting, .disconnecting: return .yellow
+        default: return nil
+        }
+    }
+
+    /// Кнопка-запуск второй строки: как вкладка, но не переключает панель; со значком-счётчиком при необходимости.
+    private func launcherButton(symbol: String, badge: Int, tint: Color?, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tint ?? Color.white.opacity(0.4))
+                .frame(width: 32, height: 26)
+                .overlay(alignment: .topTrailing) {
+                    if badge > 0 {
+                        Text(badge > 99 ? "99+" : "\(badge)").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
+                            .padding(.horizontal, 3).frame(minWidth: 12, minHeight: 12)
+                            .background(Capsule().fill(Color(red: 0.0, green: 0.47, blue: 0.84)))
+                            .offset(x: -1, y: 1)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 
     private func quickButton(symbol: String, active: Bool, warning: Bool = false,
@@ -312,6 +392,11 @@ struct NotchView: View {
                 case .calendar: CalendarTab(calendar: calendar)
                 case .sound: SoundTab(sound: sound, mixer: sound.mixer)
                 case .timer: TimerTab(timer: NotchTimer.shared, hover: model.hover)
+                case .vscode: VSCodeTab(model: model, monitor: vscode)
+                case .ai: AIChatTab(coordinator: ai)
+                case .gitlab: GitLabTab(store: gitlab)
+                case .asana: AsanaTab(store: asana)
+                case .notes: NotesTab(store: notes)
                 case .performance: PerformanceTab(stats: stats)
                 }
             }

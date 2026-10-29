@@ -61,7 +61,8 @@ enum Snapshots {
         NotchTimer.shared.start(minutes: 25)
 
         let view = NotchView(model: model, media: media, battery: battery,
-                             keepAwake: manager.keepAwake, calendar: calendar, sound: sound, stats: stats)
+                             keepAwake: manager.keepAwake, calendar: calendar, sound: sound,
+                             stats: stats, vscode: VSCodeWindowMonitor(), ai: AIChatCoordinator(), gitlab: GitLabStore(), asana: AsanaStore(), notes: NotesStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("omnimac-snapshot-notes.json")), mail: MailLauncher(), vpn: VPNMonitor())
         let size = CGSize(width: expandedSize.width + margin * 2, height: expandedSize.height + margin)
         let notchWidth = notchSize.width
         let hosting = NSHostingView(rootView: view.overlay(alignment: .top) {

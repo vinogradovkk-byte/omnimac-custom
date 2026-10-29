@@ -45,6 +45,9 @@ struct NotchGeometry: Equatable {
     static let islandWidthRatio: CGFloat = 0.13
     /// Alto del panel desplegado. Fijo: es un diseño, no una proporción.
     static let expandedHeight: CGFloat = 196
+    static let vscodeBaseVisibleRows = 2
+    static let vscodeRowHeight: CGFloat = 40
+    static let maximumExpandedHeightRatio: CGFloat = 0.70
     /// Margen libre a cada lado del panel desplegado respecto al borde de la pantalla.
     static let screenMargin: CGFloat = 40
 
@@ -120,5 +123,36 @@ struct NotchGeometry: Equatable {
                   safeAreaTop: screen.safeAreaInsets.top,
                   auxiliaryWidths: aux,
                   menuBarHeight: screen.frame.maxY - screen.visibleFrame.maxY)
+    }
+
+    static func vscodeExpandedHeight(windowCount: Int, screenHeight: CGFloat) -> CGFloat {
+        let extraRows = max(0, windowCount - vscodeBaseVisibleRows)
+        let wanted = expandedHeight + CGFloat(extraRows) * vscodeRowHeight
+        return min(wanted, screenHeight * maximumExpandedHeightRatio)
+    }
+
+    func expandedFrames(height: CGFloat) -> (panel: CGRect, body: CGRect) {
+        expandedFrames(size: CGSize(width: expandedSize.width, height: height))
+    }
+
+    func expandedFrames(size: CGSize) -> (panel: CGRect, body: CGRect) {
+        let panel = CGRect(
+            x: screenFrame.midX - (size.width + shadowMargin * 2) / 2,
+            y: screenFrame.maxY - size.height - shadowMargin,
+            width: size.width + shadowMargin * 2,
+            height: size.height + shadowMargin
+        )
+        let body = CGRect(
+            x: panel.minX + shadowMargin - NotchExpandedShape.flare,
+            y: screenFrame.maxY - size.height,
+            width: size.width + NotchExpandedShape.flare * 2,
+            height: size.height
+        )
+        return (panel, body)
+    }
+
+    func aiExpandedSize() -> CGSize {
+        CGSize(width: min(760, screenFrame.width - Self.screenMargin),
+               height: min(520, screenFrame.height * Self.maximumExpandedHeightRatio))
     }
 }

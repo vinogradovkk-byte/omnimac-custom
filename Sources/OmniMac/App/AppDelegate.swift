@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let showSettingsNotification = Notification.Name("com.seergiii.omnimac.showSettings")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        EditingShortcuts.install()
         if handOverToRunningCopy() { return }
         NSApp.setActivationPolicy(.accessory)
         Notifier.install()
